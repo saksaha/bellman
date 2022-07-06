@@ -378,6 +378,7 @@ pub fn blake2s<Scalar: PrimeField, CS: ConstraintSystem<Scalar>>(
 
 #[cfg(test)]
 mod test {
+    use blake2s_simd::blake2s as blake2s_fn;
     use blake2s_simd::Params as Blake2sParams;
     use bls12_381::Scalar;
     use hex_literal::hex;
@@ -391,9 +392,12 @@ mod test {
 
     #[test]
     fn test_blank_hash() {
+        println!("test start!!!");
+
         let mut cs = TestConstraintSystem::<Scalar>::new();
         let input_bits = vec![];
         let out = blake2s(&mut cs, &input_bits, b"12345678").unwrap();
+
         assert!(cs.is_satisfied());
         assert_eq!(cs.num_constraints(), 0);
 
@@ -415,14 +419,70 @@ mod test {
     #[test]
     fn test_blake2s_constraints() {
         let mut cs = TestConstraintSystem::<Scalar>::new();
-        let input_bits: Vec<_> = (0..512)
+        let input_bits: Vec<Boolean> = (0..512)
             .map(|i| {
                 AllocatedBit::alloc(cs.namespace(|| format!("input bit {}", i)), Some(true))
                     .unwrap()
                     .into()
             })
             .collect();
-        blake2s(&mut cs, &input_bits, b"12345678").unwrap();
+
+        {
+            // logging
+            println!("input_bits");
+
+            for (idx, b) in input_bits.iter().enumerate() {
+                let v = match b.get_value() {
+                    Some(b) => {
+                        if b == true {
+                            1
+                        } else {
+                            0
+                        }
+                    }
+                    None => 0,
+                };
+                print!("{}", v);
+            }
+            println!("\nend input bits, len: {}", input_bits.len());
+        }
+
+        let out = blake2s(&mut cs, &input_bits, b"12345678").unwrap();
+        {
+            // logging
+            println!("out");
+
+            for (idx, b) in out.iter().enumerate() {
+                let v = match b.get_value() {
+                    Some(b) => {
+                        if b == true {
+                            1
+                        } else {
+                            0
+                        }
+                    }
+                    None => 0,
+                };
+                print!("{}", v);
+            }
+            println!("\nend out bits, len: {}", input_bits.len());
+        }
+
+        let input_bits_2: Vec<u8> = (0..512).map(|_| 1).collect();
+
+        // let out2 = blake2s_fn(input_bits_2.as_slice());
+        let out2 = Blake2sParams::new()
+            .hash_length(32)
+            .personal(b"12345678")
+            .to_state()
+            .update(&input_bits_2)
+            .finalize();
+
+        let out2_bytes = out2.as_bytes();
+
+        println!("input_bits_2: {:?}", input_bits_2);
+        println!("out2: {:?}, out2_bytes: {:?}", out2, out2_bytes);
+
         assert!(cs.is_satisfied());
         assert_eq!(cs.num_constraints(), 21518);
     }
@@ -465,7 +525,9 @@ mod test {
     }
 
     #[test]
-    fn test_blake2s() {
+    fn test_blake2s_333() {
+        println!("powerw");
+
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
             0xbc, 0xe5,
@@ -479,13 +541,15 @@ mod test {
 
             let data: Vec<u8> = (0..input_len).map(|_| rng.next_u32() as u8).collect();
 
+            println!("data: {:?}", data);
+
             h.update(&data);
 
             let hash_result = h.finalize();
 
             let mut cs = TestConstraintSystem::<Scalar>::new();
 
-            let mut input_bits = vec![];
+            let mut input_bits: Vec<Boolean> = vec![];
 
             for (byte_i, input_byte) in data.into_iter().enumerate() {
                 for bit_i in 0..8 {
@@ -497,6 +561,25 @@ mod test {
                             .into(),
                     );
                 }
+            }
+
+            {
+                // logging
+                println!("input_bits");
+                for (idx, b) in input_bits.iter().enumerate() {
+                    let v = match b.get_value() {
+                        Some(b) => {
+                            if b == true {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                        None => 0,
+                    };
+                    print!("{}", v);
+                }
+                println!("\nend input bits, len: {}", input_bits.len());
             }
 
             let r = blake2s(&mut cs, &input_bits, b"12345678").unwrap();
