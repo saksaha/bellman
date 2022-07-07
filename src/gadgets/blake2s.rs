@@ -341,6 +341,7 @@ pub fn blake2s<Scalar: PrimeField, CS: ConstraintSystem<Scalar>>(
         for word in block.chunks(32) {
             let mut tmp = word.to_vec();
             while tmp.len() < 32 {
+                // padding 0 at tail
                 tmp.push(Boolean::constant(false));
             }
             this_block.push(UInt32::from_bits(&tmp));
@@ -526,8 +527,6 @@ mod test {
 
     #[test]
     fn test_blake2s_333() {
-        println!("powerw");
-
         let mut rng = XorShiftRng::from_seed([
             0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
             0xbc, 0xe5,
@@ -541,19 +540,29 @@ mod test {
 
             let data: Vec<u8> = (0..input_len).map(|_| rng.next_u32() as u8).collect();
 
-            println!("data: {:?}", data);
+            println!("[+] data: {:?}", data);
 
             h.update(&data);
 
             let hash_result = h.finalize();
+            println!("[+] hash_result: {:?}", hash_result);
 
+            // constraint system with circuit
             let mut cs = TestConstraintSystem::<Scalar>::new();
 
             let mut input_bits: Vec<Boolean> = vec![];
 
             for (byte_i, input_byte) in data.into_iter().enumerate() {
+                println!("[-] capture input_byte: {:?}", input_byte);
                 for bit_i in 0..8 {
                     let cs = cs.namespace(|| format!("input bit {} {}", byte_i, bit_i));
+
+                    println!(
+                        "[*] {} bit shifted input_byte: {:#5?}, pushed value: {:?}",
+                        bit_i,
+                        input_byte >> bit_i,
+                        (input_byte >> bit_i) & 1u8
+                    );
 
                     input_bits.push(
                         AllocatedBit::alloc(cs, Some((input_byte >> bit_i) & 1u8 == 1u8))
@@ -565,8 +574,11 @@ mod test {
 
             {
                 // logging
-                println!("input_bits");
+                println!("input_bits:");
                 for (idx, b) in input_bits.iter().enumerate() {
+                    if idx % 8 == 0 && idx != 0 {
+                        print!(" ");
+                    }
                     let v = match b.get_value() {
                         Some(b) => {
                             if b == true {
@@ -580,9 +592,33 @@ mod test {
                     print!("{}", v);
                 }
                 println!("\nend input bits, len: {}", input_bits.len());
+                println!("");
             }
 
             let r = blake2s(&mut cs, &input_bits, b"12345678").unwrap();
+
+            {
+                // logging
+                println!("[-] hash_result from circuit:");
+                for (idx, b) in r.iter().enumerate() {
+                    if idx % 8 == 0 && idx != 0 {
+                        print!(" ");
+                    }
+                    let v = match b.get_value() {
+                        Some(b) => {
+                            if b == true {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                        None => 0,
+                    };
+                    print!("{}", v);
+                }
+                println!("\nend input bits, len: {}", r.len());
+                println!("");
+            }
 
             assert!(cs.is_satisfied());
 

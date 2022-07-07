@@ -157,6 +157,11 @@ impl UInt32 {
             }
         }
 
+        println!(
+            "[+++] [src/gadgets/boolean.rs] recovered value: {:?}",
+            value
+        );
+
         UInt32 {
             value,
             bits: new_bits,
